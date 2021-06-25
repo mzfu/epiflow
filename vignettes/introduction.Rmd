@@ -1,0 +1,231 @@
+---
+title: "introduction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{introduction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Basic setups
+```{r setup}
+library(epiflow)
+```
+
+### Load in packages needed and build-in dataset
+Data source: https://hrs.isr.umich.edu/data-products/access-to-public-data (public available)
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(DT)
+# Load in build-in dataset -- new_hrs.rda
+system.file("data", "new_hrs.rda", package = "epiflow")
+```
+
+### Look at the structure of the data
+```{r message=FALSE, warning=FALSE}
+datatable(new_hrs)
+```
+
+&nbsp;
+&nbsp;
+
+### Variables:
+**HHID, PN**: identification number  
+**AD_cat**: cognitive status -- Normal, Cognitive Impairment Non Dementia (CIND), Dementia  
+**AD_bin**: binary variable -- dementia (1) or not (0)  
+**age, sex, education**: self-reported age, sex, years of education  
+**HDL, TC**: blood High Density Lipoprotein (HDL), total cholesterol (TC), mg/dL  
+**HDL_clinic, TC_clinic**: clinical level of HDL/TC -- at risk low (1) HDL: <40 mg/dL for male and <50 mg/dL for female; at risk high (1) TC: ≥240 mg/dL  
+**PGS_HDL, PGS_TC**: polygenic risk score for HDL/TC  
+
+&nbsp;
+&nbsp;
+
+# Univariate and bivariate analysis
+## 1. Make table one 
+There are a lot of existing useful packages for making table one. I prefer to use *compareGroups* package, see details at https://cran.r-project.org/web/packages/compareGroups/index.html.
+
+## 2. make_heatmap( ): Check collinearity (associations across all covariates)
+### Inputs:
+* __dataset:__ A dataset of interest (should all be numeric variables).  
+* **sig_level:** Significant level to be marked in the heat map, 0.05 by default.  
+* **lab_size:** Size for label.  
+* **fontsize:** Size for font.  
+* **width:** Output figure width.  
+* **height:** Output figure height.  
+* **save_name:** Saved name for your figure.  
+* **output_path:** File path for output figure.
+
+### Output:
+* A heat map for correlations across all covariates.  
+```{r fig.height = 4.5, fig.width = 4.5}
+# Make a numerical dataset to plot
+hrs_toplot <-
+  new_hrs %>% 
+  select(AD_bin, age, sex, education, HDL, TC, PGS_HDL, PGS_TC)
+# Specify output path
+output_path = "/Users/Mingzhou/Desktop/Materials/General R/output/"
+# Make a heat map
+make_heatmap(hrs_toplot, sig_level = 0.05, lab_size = 3, fontsize = 12, width = 4.5, height = 4.5, 'example_heatmap.png', output_path)
+```
+
+&nbsp;
+&nbsp;
+
+# Regression analysis
+## Logistic regression
+### 1. List a couple of models of interest
+```{r}
+crude <- glm(AD_bin ~ age, data = new_hrs, family = "binomial")
+adj_1 <- glm(AD_bin ~ age + sex, data = new_hrs, family = "binomial")
+adj_2 <- glm(AD_bin ~ age + sex + education, data = new_hrs, family = "binomial")
+```
+
+### 2. extract_OR( ): extract OR for a single model
+
+### Inputs:
+* __regress_obj:__ An object given by glm() function
+* **index_lst:** A list of index(s) of variable(s) of interest
+* **mark:** A mark created by users to identify model(s)
+
+### Output:
+* A table of extracted model values
+
+#### For single variable:
+```{r message=FALSE, warning=FALSE}
+tab_crude <- extract_OR(crude, 2, 'crude_age')
+datatable(tab_crude)
+```
+
+#### For multiple variables:
+```{r message=FALSE, warning=FALSE}
+tab_adj2 <- extract_OR(adj_2, c(2, 3, 4), 'adj_full')
+datatable(tab_adj2)
+```
+
+### 3. make_OR_table( ): make an OR table for all models at once
+
+### Inputs:
+* __lst_model:__ A list of logistic regression models
+* **index_lst:** A list of index(s) of variable(s) of interest
+* **model_head:** The mark created by users to identify model(s)
+
+### Output:
+* A table of extracted model values for multiple models
+
+```{r message=FALSE, warning=FALSE}
+lst_model <- c('crude', 'adj_1', 'adj_2')
+# To look at all values for variabel 'age' at the same time
+tab_OR_all <- make_OR_table(lst_model, 2, 'age_')
+datatable(tab_OR_all)
+```
+
+### 4. Population attributable fraction (PAF) calculation
+
+### Inputs:
+* __object:__ A regression object given by glm() function
+* __data:__ An optional data frame, list or environment (or object coercible by as.data.frame to a data frame) containing the variables in the model. If not found in data, the variables are taken from environment (formula), typically the environment from which the function is called.
+* **exposure:** The name of the exposure variable as a string.
+* **mark:** A mark created by the user to identify model(s)
+* **case.control:** Can be set to TRUE if the data is from a non-matched case control study. By default case.control is set to FALSE which is used for cross-sectional sampling designs.
+* **confidence.level:** User-specified confidence level for the confidence intervals. If not specified it defaults to 95 percent. Should be specified in decimals such as 0.95 for 95 percent.
+
+### Output:
+* A table of values for PAF.
+
+```{r}
+pop_crude <- glm(AD_bin ~ sex, data = new_hrs, family = 'binomial')
+tab_AF <- extract_AF(object = pop_crude, data = new_hrs, exposure = "sex", mark = 'crude_example')
+datatable(tab_AF)
+```
+
+## Linear regression
+Usage of functions are similar to logistic regression:
+```{r}
+linear_crude <- lm(HDL ~ age, data = new_hrs)
+linear_adj_1 <- lm(HDL ~ age + sex, data = new_hrs)
+linear_adj_2 <- lm(HDL ~ age + sex + education, data = new_hrs)
+
+lst_model <- c('linear_crude', 'linear_adj_1', 'linear_adj_2')
+# To look at all values for variabel 'age' at the same time
+tab_linear_all <- make_coeff_table_lm(lst_model, 2, 'age_')
+datatable(tab_linear_all)
+```
+
+&nbsp;
+&nbsp;
+
+# Mendelian randomization
+### MR_assumption_test( ): Test for MR assumptions (Strict tests for reference, not recommended in real analysis)
+
+### Inputs:
+* __gene_instrument:__ The gene instrument used in the MR analysis (should be single SNP/polygenic score).
+* **exposure:** Exposure of the MR model.
+* **outcome:** Outcome of the MR model.
+* **covariates:** Covariates adjusted in the model (default as NULL).
+* **data_name:** Name of the dataset. Please notice that the dataset should have NO missing value.
+
+### Output:
+* A set of TRUE/FALSE indicating if the assumptions hold. If the MR assumptions hold, all value should be TRUE.
+```{r}
+# Drop the missing values
+mr_data <-
+  new_hrs %>% 
+  drop_na()
+# Test for MR assumptions
+MR_assumption_test(gene_instrument = 'PGS_HDL', exposure = 'HDL_clinic', 
+                   outcome = 'AD_bin', covariates = 'age + sex + education', 
+                   data_name = 'mr_data')
+```
+
+### get_MR_value( ): Get MR results
+
+### Inputs:
+* __reg_object1:__ A regression model given by glm() function: exposure ~ gene_instrument (+ covariates)
+* **reg_object2:** A regression model given by glm() function: outcome ~ gene_instrument (+ covariates)
+* **mark:** Mark of the MR model
+
+### Output:
+* A table of extracted results from Mendelian randomization
+
+Crude model
+```{r}
+# Create two logistic models using glm() 
+f0_exposure <- glm(HDL_clinic ~ PGS_HDL, data = mr_data, family = 'binomial')
+f0_outcome <- glm(AD_bin ~ PGS_HDL, data = mr_data, family = 'binomial')
+# Extract MR values
+crude_mr <- get_MR_value(f0_exposure, f0_outcome, 'example_MR')
+datatable(crude_mr)
+```
+
+Adjusted model
+```{r}
+# Create another two logistic models using glm() 
+f1_exposure <- glm(HDL_clinic ~ PGS_HDL + age + sex + education, data = mr_data, family = 'binomial')
+f1_outcome <- glm(AD_bin ~ PGS_HDL + age + sex + education, data = mr_data, family = 'binomial')
+# Extract MR values
+adj_mr <- get_MR_value(f1_exposure, f1_outcome, 'adj_MR')
+# Bind results together
+total_mr <- rbind(crude_mr, adj_mr)
+datatable(total_mr)
+```
+
+&nbsp;
+&nbsp;
+
+# Table output
+All the tables could be output to your local folder as Excel speadsheets, then you could simply do some formatting!
+```{r eval=FALSE}
+sheets_all <- list('logistic_table' = tab_OR_all,
+                  'linear_table' = tab_linear_all,
+                  'mr_table' = total_mr)
+writexl::write_xlsx(sheets_all, path = paste0(output_path, 'table_in_one.xlsx'))
+```
+
